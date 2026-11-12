@@ -1,4 +1,4 @@
-#  Vibe Coding 👩‍💻
+#  Repository of repos👩‍💻
 
 Welcome to my digital bookshelf. This repo is a collection of my "vibe coding" sessions—where I stop overthinking and just start building. 
 
