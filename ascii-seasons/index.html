@@ -1,0 +1,675 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ASCII Seasons</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+/* ── reset & base ── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --fg:#f6ecf0;
+  --panel:rgba(10,8,22,.55);
+  --line:rgba(255,255,255,.18);
+  --accent:#ffc2d4;
+  --font-serif:'Playfair Display',Georgia,serif;
+  --font-mono:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+}
+html,body{height:100%;overflow:hidden;background:#0b1020;color:var(--fg)}
+canvas{position:fixed;inset:0;width:100%;height:100%;display:block;cursor:none}
+
+/* ── HUD (top-left) ── */
+.hud{
+  position:fixed;top:16px;left:16px;
+  max-width:min(320px,calc(100vw - 32px));
+  padding:16px 20px;
+  background:var(--panel);
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  border:1px solid var(--line);border-radius:14px;
+  font-family:var(--font-mono);
+  pointer-events:none;
+  user-select:none;
+}
+#time{
+  font-family:var(--font-serif);
+  font-size:clamp(28px,6.5vw,58px);
+  font-weight:600;
+  letter-spacing:.03em;
+  line-height:1;
+  font-variant-numeric:tabular-nums;
+}
+#date{
+  font-family:var(--font-serif);
+  font-style:italic;
+  font-size:clamp(11px,1.6vw,14px);
+  opacity:.85;
+  margin-top:5px;
+  letter-spacing:.02em;
+}
+#wx{
+  margin-top:10px;
+  font-size:clamp(10px,1.4vw,13px);
+  line-height:1.65;
+  white-space:pre-wrap;
+  opacity:.9;
+}
+
+/* ── season label (top-right) ── */
+.season-badge{
+  position:fixed;top:16px;right:16px;
+  font-family:var(--font-serif);
+  font-style:italic;
+  font-size:clamp(13px,2.2vw,20px);
+  letter-spacing:.06em;
+  opacity:.7;
+  pointer-events:none;
+  user-select:none;
+  text-shadow:0 2px 12px rgba(0,0,0,.6);
+  transition:opacity .4s;
+}
+
+/* ── bottom bar ── */
+.btns{
+  position:fixed;bottom:0;left:0;right:0;
+  display:flex;align-items:center;justify-content:center;
+  gap:0;
+  padding:12px 16px 20px;
+  background:linear-gradient(to top,rgba(0,0,0,.55) 0%,transparent 100%);
+  pointer-events:none;
+  flex-wrap:wrap;
+  row-gap:8px;
+}
+.btn-group{
+  display:flex;align-items:center;gap:6px;
+  pointer-events:all;
+}
+.sep{
+  width:1px;height:28px;
+  background:var(--line);
+  margin:0 14px;
+  pointer-events:none;
+}
+button{
+  font-family:var(--font-mono);
+  font-size:clamp(10px,1.5vw,13px);
+  color:var(--fg);
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:8px;
+  padding:7px 14px;
+  cursor:pointer;
+  -webkit-tap-highlight-color:transparent;
+  touch-action:manipulation;
+  transition:background .18s,border-color .18s,transform .1s;
+  pointer-events:all;
+  user-select:none;
+}
+button:hover{background:rgba(255,255,255,.18);transform:translateY(-1px)}
+button:active{transform:translateY(0)}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+button.on{
+  background:rgba(255,255,255,.26);
+  border-color:rgba(255,255,255,.38);
+}
+.btn-key{
+  font-size:.75em;
+  opacity:.55;
+  margin-left:4px;
+}
+#btn-pause{
+  min-width:76px;
+  letter-spacing:.04em;
+}
+#btn-pause.on{
+  background:rgba(255,160,180,.22);
+  border-color:rgba(255,180,200,.4);
+  color:#ffd6e3;
+}
+
+/* ── hint strip ── */
+.hint{
+  position:fixed;bottom:72px;left:50%;transform:translateX(-50%);
+  font-family:var(--font-mono);
+  font-size:11px;opacity:.38;
+  pointer-events:none;user-select:none;
+  white-space:nowrap;
+  text-align:center;
+}
+
+/* ── custom cursor ── */
+#cursor{
+  position:fixed;width:14px;height:14px;
+  pointer-events:none;z-index:999;
+  font-family:var(--font-mono);font-size:14px;
+  color:rgba(255,255,255,.65);
+  transform:translate(-50%,-50%);
+  line-height:1;
+  transition:opacity .2s;
+}
+
+/* ── pause overlay ── */
+#paused-label{
+  position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+  font-family:var(--font-serif);font-style:italic;
+  font-size:clamp(22px,5vw,42px);
+  letter-spacing:.12em;
+  opacity:0;
+  pointer-events:none;
+  user-select:none;
+  text-shadow:0 4px 24px rgba(0,0,0,.7);
+  transition:opacity .35s;
+}
+#paused-label.show{opacity:.6}
+
+/* ── responsive tweaks ── */
+@media(max-width:480px){
+  .hud{padding:12px 14px}
+  .sep{margin:0 8px}
+  .hint{display:none}
+}
+@media(hover:none){
+  #cursor{display:none}
+  canvas{cursor:auto}
+}
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="Animated ASCII seasonal scene"></canvas>
+
+<div class="hud">
+  <div id="time">--:--:--</div>
+  <div id="date"></div>
+  <div id="wx">Loading weather…</div>
+</div>
+
+<div class="season-badge" id="season-badge">❄ snowfall</div>
+
+<div id="paused-label">paused</div>
+
+<div id="cursor">*</div>
+
+<div class="btns" id="btns">
+  <div class="btn-group">
+    <button data-s="winter" title="Snowfall [1]">❄ snow<span class="btn-key">1</span></button>
+    <button data-s="spring" title="Cherry Blossom [2]">✿ blossom<span class="btn-key">2</span></button>
+    <button data-s="autumn" title="Autumn Leaves [3]">🍂 autumn<span class="btn-key">3</span></button>
+    <button data-s="auto"   title="Auto by date [0]">auto<span class="btn-key">0</span></button>
+  </div>
+  <div class="sep"></div>
+  <div class="btn-group">
+    <button id="btn-pause" title="Pause / Resume [Space]">⏸ pause<span class="btn-key">spc</span></button>
+  </div>
+</div>
+
+<div class="hint">hover or touch canvas to shift particles · keys: 0–3 switch season · space pause</div>
+
+<script>
+/* ═══════════════════════════════════════════════════
+   ASCII SEASONS  —  interactive canvas
+   ═══════════════════════════════════════════════════ */
+const cv  = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const MONO = 'ui-monospace,"SF Mono",Menlo,Consolas,monospace';
+
+let W, H, FS = 16, CW = 9.6, LH = 18;
+let paused = false;
+
+/* ── resize ── */
+function resize() {
+  const dpr = window.devicePixelRatio || 1;
+  W = innerWidth; H = innerHeight;
+  cv.width  = W * dpr;
+  cv.height = H * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  FS = W < 500 ? 12 : W < 800 ? 14 : 16;
+  ctx.font = FS + 'px ' + MONO;
+  ctx.textBaseline = 'top';
+  CW = ctx.measureText('M').width;
+  LH = Math.round(FS * 1.15);
+  stars = Array.from({length: 70}, () => ({
+    x: Math.random(), y: Math.random() * .55, p: Math.random() * 6.28
+  }));
+  seed();
+}
+addEventListener('resize', resize);
+
+/* ═══════════════════════════════════════════════════
+   SEASONS
+═══════════════════════════════════════════════════ */
+const SEASONS = {
+  spring: {
+    label: '✿ cherry blossom',
+    ch:    ['*', '@', 'o', '.', "'", '❀'],
+    cols:  ['#ffc2d4','#ff9ebb','#ffe1ea','#f7a8c8','#ffcde0'],
+    vy: [24, 55], sway: 28, n: 72,
+    canopy: ['@','*','o'], ccols: ['#ffb7cf','#ff9ebb','#ffd6e3','#f48fb1'],
+    gch:   ['.', ',', "'", '"'], gcols: ['#7c5a6a','#ffb7cf','#5d7a52'],
+    tint:  [255,150,190],
+    cursorCh: ['✿','*','o','@'],
+  },
+  winter: {
+    label: '❄ snowfall',
+    ch:    ['*', '.', '+', "'", '·', '❄'],
+    cols:  ['#ffffff','#dbe9ff','#bcd4f5','#eaf2ff'],
+    vy: [28, 90], sway: 12, n: 150,
+    canopy: ['*',',','.'], ccols: ['#ffffff','#8d7d76','#cfe0f7'],
+    gch:   ['_','.','─','~'], gcols: ['#ffffff','#dbe9ff','#c4d6ef'],
+    tint:  [170,200,255],
+    cursorCh: ['❄','*','+','.'],
+  },
+  autumn: {
+    label: '🍂 autumn leaves',
+    ch:    ['%','&','~','v','y','>','❧'],
+    cols:  ['#e8772e','#d94f1c','#f2b134','#a63d1f','#c98a2b','#e06030'],
+    vy: [22, 65], sway: 44, n: 62,
+    canopy: ['@','%','&'], ccols: ['#e8772e','#d94f1c','#f2b134','#b8451d'],
+    gch:   [',','.','%','~'], gcols: ['#8a4b25','#c46a20','#d9a03a'],
+    tint:  [255,160,70],
+    cursorCh: ['🍂','%','&','~'],
+  }
+};
+
+/* ASCII tree */
+const TREE = [
+  "        @@@@@@@        ",
+  "    @@@@@@@@@@@@@@@    ",
+  "  @@@@@@@@@@@@@@@@@@@  ",
+  " @@@@@@@@@@@@@@@@@@@@@ ",
+  "  @@@@@@@@@@@@@@@@@@@  ",
+  "    @@@@@@@\\@|@/@@@@   ",
+  "       @@@@\\|/@@@@     ",
+  "          |||          ",
+  "          |||          ",
+  "         /|||\\         "
+];
+
+/* ═══════════════════════════════════════════════════
+   MODE / SEASON STATE
+═══════════════════════════════════════════════════ */
+let mode = 'auto', season = 'spring';
+try { mode = localStorage.getItem('asc-seasonMode') || 'auto'; } catch(e){}
+
+function autoSeason() {
+  const m = new Date().getMonth();
+  if (m >= 8 && m <= 10) return 'autumn';
+  if (m === 11 || m <= 1) return 'winter';
+  return 'spring';
+}
+
+function setMode(m) {
+  mode = m;
+  try { localStorage.setItem('asc-seasonMode', m); } catch(e){}
+  season = (m === 'auto') ? autoSeason() : m;
+  document.querySelectorAll('#btns [data-s]').forEach(b =>
+    b.classList.toggle('on', b.dataset.s === m));
+  document.getElementById('season-badge').textContent = SEASONS[season].label;
+  seed();
+  renderWx();
+}
+
+document.getElementById('btns').addEventListener('click', e => {
+  const btn = e.target.closest('[data-s]');
+  if (btn) setMode(btn.dataset.s);
+});
+
+/* pause */
+function togglePause() {
+  paused = !paused;
+  const btn = document.getElementById('btn-pause');
+  btn.classList.toggle('on', paused);
+  btn.innerHTML = paused
+    ? '▶ play<span class="btn-key">spc</span>'
+    : '⏸ pause<span class="btn-key">spc</span>';
+  document.getElementById('paused-label').classList.toggle('show', paused);
+  if (!paused) { last = performance.now(); requestAnimationFrame(frame); }
+}
+document.getElementById('btn-pause').addEventListener('click', togglePause);
+
+/* keyboard */
+addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  const map = { '0':'auto', '1':'winter', '2':'spring', '3':'autumn' };
+  if (map[e.key]) { setMode(map[e.key]); return; }
+  if (e.code === 'Space') { e.preventDefault(); togglePause(); }
+});
+
+/* ═══════════════════════════════════════════════════
+   HELPERS
+═══════════════════════════════════════════════════ */
+const rnd  = (a, b) => a + Math.random() * (b - a);
+const pick = a      => a[Math.floor(Math.random() * a.length)];
+const hash = (i, j) => { const s = Math.sin(i*127.1+j*311.7)*43758.5453; return s - Math.floor(s); };
+const lerp = (a, b, t) => a + (b - a) * t;
+const hex  = h => [1,3,5].map(i => parseInt(h.substr(i,2), 16));
+const mix  = (c1,c2,t) => { const a=hex(c1),b=hex(c2); return a.map((v,i)=>Math.round(lerp(v,b[i],t))); };
+const rgb  = c => 'rgb('+c.join(',')+')';
+const snap = (v,g) => Math.round(v/g)*g;
+
+/* ═══════════════════════════════════════════════════
+   SKY GRADIENT BY TIME
+═══════════════════════════════════════════════════ */
+const SKY = [
+  [0,  '#070b1a','#141a33'],
+  [5.5,'#1c2146','#3a3560'],
+  [7,  '#4b4f8a','#f2a1a0'],
+  [9,  '#3f6fa3','#a9c6dc'],
+  [16, '#3c6e9e','#a9c6dc'],
+  [18, '#4a4a85','#f08e7a'],
+  [19.5,'#1e2245','#463a63'],
+  [21, '#0a0e22','#161c38'],
+  [24, '#070b1a','#141a33']
+];
+function skyColors(h, grey) {
+  let i = 0;
+  while (i < SKY.length-2 && h >= SKY[i+1][0]) i++;
+  const a=SKY[i], b=SKY[i+1], t=(h-a[0])/(b[0]-a[0]);
+  let top=mix(a[1],b[1],t), bot=mix(a[2],b[2],t);
+  if (grey > 0) {
+    const g=hex('#5b6270');
+    top=top.map((v,k)=>Math.round(lerp(v,g[k]*.8,grey)));
+    bot=bot.map((v,k)=>Math.round(lerp(v,g[k],grey)));
+  }
+  return [rgb(top), rgb(bot)];
+}
+
+/* ═══════════════════════════════════════════════════
+   WEATHER
+═══════════════════════════════════════════════════ */
+let wx = null, wxState = 'loading';
+function wxKind(c) {
+  if (c===0) return 'Clear sky';
+  if (c<=2)  return 'Partly cloudy';
+  if (c===3) return 'Overcast';
+  if (c===45||c===48) return 'Foggy';
+  if (c>=51&&c<=57) return 'Drizzle';
+  if (c>=61&&c<=67) return 'Rain';
+  if (c>=71&&c<=77) return 'Snow';
+  if (c>=80&&c<=82) return 'Rain showers';
+  if (c===85||c===86) return 'Snow showers';
+  if (c>=95) return 'Thunderstorm';
+  return 'Unknown';
+}
+const isRain = c => c && ((c>=51&&c<=67)||(c>=80&&c<=82)||c>=95);
+const isSnow = c => c && ((c>=71&&c<=77)||c===85||c===86);
+const isGrey = c => c && (c===3||c===45||c===48||isRain(c)||isSnow(c));
+
+async function loadWx(lat, lon, label) {
+  try {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`
+      + `&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,wind_direction_10m&timezone=auto`;
+    const j = await (await fetch(url)).json();
+    const c = j.current;
+    wx = { t:c.temperature_2m, f:c.apparent_temperature, h:c.relative_humidity_2m,
+           code:c.weather_code, ws:c.wind_speed_10m, wd:c.wind_direction_10m, label };
+    wxState = 'ok';
+  } catch(e) { wxState = 'offline'; }
+  renderWx(); seed();
+}
+
+function startWeather() {
+  const go = (lat,lon,label) => {
+    loadWx(lat,lon,label);
+    setInterval(() => loadWx(lat,lon,label), 600000);
+  };
+  if (!navigator.geolocation) { go(19.076,72.8777,'Mumbai'); return; }
+  navigator.geolocation.getCurrentPosition(
+    p => go(+p.coords.latitude.toFixed(3), +p.coords.longitude.toFixed(3), 'Your location'),
+    ()=> go(19.076,72.8777,'Mumbai'),
+    { timeout:5000, maximumAge:600000 }
+  );
+}
+
+function renderWx() {
+  const el = document.getElementById('wx');
+  if (wxState==='loading') { el.textContent='Loading weather…'; return; }
+  if (!wx) {
+    el.textContent='Weather unavailable.\nOpen from a web server for live data.';
+    return;
+  }
+  const dirArrow = deg => {
+    const dirs=['N','NE','E','SE','S','SW','W','NW'];
+    return dirs[Math.round(deg/45)%8];
+  };
+  el.textContent =
+    `${wx.label}\n` +
+    `${Math.round(wx.t)}°C  feels ${Math.round(wx.f)}°C\n` +
+    `${wxKind(wx.code)}\n` +
+    `Wind ${Math.round(wx.ws)} km/h ${dirArrow(wx.wd)}  · ${wx.h}% humidity\n` +
+    `Scene: ${SEASONS[season].label}${mode==='auto'?' (auto)':''}`;
+}
+
+/* ═══════════════════════════════════════════════════
+   CLOCK
+═══════════════════════════════════════════════════ */
+function tick() {
+  const d = new Date();
+  document.getElementById('time').textContent =
+    d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+  document.getElementById('date').textContent =
+    d.toLocaleDateString(undefined, {weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  if (mode==='auto' && autoSeason()!==season) setMode('auto');
+}
+setInterval(tick, 1000);
+
+/* ═══════════════════════════════════════════════════
+   MOUSE / TOUCH INTERACTION
+═══════════════════════════════════════════════════ */
+let mouse = { x: W/2||400, y: H/2||300, active: false, force: 0 };
+const cursorEl = document.getElementById('cursor');
+let cursorTick = 0;
+
+cv.addEventListener('mousemove', e => {
+  mouse.x = e.clientX; mouse.y = e.clientY; mouse.active = true;
+  cursorEl.style.left = e.clientX + 'px';
+  cursorEl.style.top  = e.clientY + 'px';
+  cursorEl.style.opacity = '1';
+  mouse.force = Math.min(1, mouse.force + 0.08);
+});
+cv.addEventListener('mouseleave', () => {
+  mouse.active = false;
+  cursorEl.style.opacity = '0';
+  mouse.force = 0;
+});
+
+/* touch */
+let touches = [];
+cv.addEventListener('touchstart', e => {
+  e.preventDefault();
+  touches = Array.from(e.touches).map(t => ({x:t.clientX,y:t.clientY}));
+  if (touches.length) { mouse.x=touches[0].x; mouse.y=touches[0].y; mouse.active=true; mouse.force=1; }
+}, {passive:false});
+cv.addEventListener('touchmove', e => {
+  e.preventDefault();
+  touches = Array.from(e.touches).map(t => ({x:t.clientX,y:t.clientY}));
+  if (touches.length) { mouse.x=touches[0].x; mouse.y=touches[0].y; mouse.active=true; mouse.force=1; }
+}, {passive:false});
+cv.addEventListener('touchend', e => {
+  touches = Array.from(e.touches).map(t => ({x:t.clientX,y:t.clientY}));
+  if (!touches.length) { mouse.active=false; mouse.force=0; }
+});
+
+/* ═══════════════════════════════════════════════════
+   PARTICLES
+═══════════════════════════════════════════════════ */
+let parts = [], drops = [], stars = [];
+
+function newPart(first) {
+  const s = SEASONS[season];
+  return {
+    x:   Math.random() * W,
+    y:   first ? Math.random() * H : -rnd(5, 60),
+    vy:  rnd(s.vy[0], s.vy[1]),
+    ph:  Math.random() * 6.28,
+    sw:  rnd(.4, 1.3),
+    ch:  pick(s.ch),
+    col: pick(s.cols),
+    vx:  0  /* lateral velocity for interaction */
+  };
+}
+function newDrop(first) {
+  return { x:Math.random()*W, y:first?Math.random()*H:-20, v:rnd(380,520) };
+}
+function seed() {
+  const area = Math.min(2, Math.max(.4, (W*H)/(1280*720)));
+  const s = SEASONS[season];
+  parts = Array.from({length: Math.round(s.n * area)}, () => newPart(true));
+  /* bonus snow if real weather is snowing */
+  if (wx && isSnow(wx.code) && season !== 'winter') {
+    const sn = SEASONS.winter;
+    for (let i=0; i<Math.round(90*area); i++)
+      parts.push({x:Math.random()*W, y:Math.random()*H, vy:rnd(30,90),
+                  ph:Math.random()*6.28, sw:rnd(.4,1), ch:pick(sn.ch), col:pick(sn.cols), vx:0});
+  }
+  const rainN = wx && isRain(wx.code) ? (wx.code>=61?120:50) : 0;
+  drops = Array.from({length:Math.round(rainN*area)}, () => newDrop(true));
+}
+
+/* ═══════════════════════════════════════════════════
+   DRAW LOOP
+═══════════════════════════════════════════════════ */
+let last = performance.now(), t = 0;
+
+function frame(now) {
+  if (paused) return;
+  const dt = Math.min(.05, (now - last) / 1000);
+  last = now; t += dt;
+
+  const d  = new Date();
+  const hr = d.getHours() + d.getMinutes()/60;
+  const s  = SEASONS[season];
+  const grey = wx && isGrey(wx.code) ? .38 : 0;
+
+  /* ── sky ── */
+  const [top,bot] = skyColors(hr, grey);
+  const g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,top); g.addColorStop(1,bot);
+  ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+
+  /* ── stars ── */
+  ctx.font = FS + 'px ' + MONO;
+  const night = hr < 5.5 || hr >= 19.5;
+  if (night && !grey) {
+    ctx.fillStyle = '#e8ecff';
+    for (const st of stars) {
+      ctx.globalAlpha = .3 + .55*Math.abs(Math.sin(t*.8+st.p));
+      ctx.fillText(Math.sin(st.p*9)>.6?'+':'.', snap(st.x*W,CW), snap(st.y*H,LH));
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  /* fog overlay */
+  if (wx && (wx.code===45||wx.code===48)) {
+    ctx.fillStyle='rgba(210,215,225,.18)'; ctx.fillRect(0,0,W,H);
+  }
+
+  /* ── ground ── */
+  const rows = Math.floor(W/CW);
+  const gy   = H - 2*LH;
+  for (let r=0; r<2; r++) for (let i=0; i<rows; i++) {
+    const h = hash(i,r);
+    ctx.fillStyle = s.gcols[Math.floor(h*s.gcols.length)];
+    ctx.fillText(s.gch[Math.floor(hash(r,i)*s.gch.length)], i*CW, gy+r*LH);
+  }
+
+  /* ── tree ── */
+  const tw = TREE[0].length * CW;
+  const tx = W > 700 ? W*.72 - tw/2 : W - tw - 8;
+  const ty = gy - TREE.length * LH;
+  for (let r=0; r<TREE.length; r++) for (let c=0; c<TREE[r].length; c++) {
+    const ch = TREE[r][c]; if (ch===' ') continue;
+    const x = tx + c*CW, y = ty + r*LH;
+    if (ch==='@') {
+      const hv = hash(c,r);
+      const cg = s.canopy[Math.floor((hv*10 + t*.4) % s.canopy.length)];
+      ctx.fillStyle = s.ccols[Math.floor(hv*s.ccols.length)];
+      ctx.fillText(cg, x, y);
+    } else {
+      ctx.fillStyle = season==='winter' ? '#a08f87' : '#7a5238';
+      ctx.fillText(ch, x, y);
+    }
+  }
+
+  /* ── wind from real weather or default ── */
+  const wind = wx
+    ? -Math.sin(wx.wd*Math.PI/180)*Math.min(wx.ws,40)*1.6
+    : (season==='winter' ? 4 : season==='autumn' ? 8 : 6);
+
+  /* ── interaction force field ── */
+  const INTERACT_R  = 160;   /* radius of effect */
+  const INTERACT_STR = 220;  /* scatter strength */
+
+  /* fade mouse.force when not active */
+  if (!mouse.active) mouse.force = Math.max(0, mouse.force - dt*1.2);
+
+  /* ── particles ── */
+  for (const p of parts) {
+    /* base fall */
+    p.y += p.vy * dt;
+
+    /* sway */
+    const swayX = (wind + Math.sin(t*p.sw + p.ph) * s.sway) * dt;
+    p.x += swayX;
+
+    /* cursor / touch repulsion */
+    if (mouse.force > 0.01) {
+      const dx = p.x - mouse.x;
+      const dy = p.y - mouse.y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      if (dist < INTERACT_R && dist > 1) {
+        const fac = (1 - dist/INTERACT_R) * INTERACT_STR * mouse.force * dt;
+        p.vx += (dx/dist)*fac;
+        p.y  -= (dy/dist)*fac * .3; /* slight upward push */
+      }
+    }
+
+    /* apply & dampen lateral velocity */
+    p.x  += p.vx * dt;
+    p.vx *= (1 - 3.5*dt);
+
+    /* recycle */
+    if (p.y > gy+LH*.5 || p.x < -60 || p.x > W+60) {
+      Object.assign(p, newPart(false));
+      if (p.x<0||p.x>W) p.x = Math.random()*W;
+    }
+
+    ctx.fillStyle = p.col;
+    ctx.fillText(p.ch, snap(p.x,CW), snap(p.y,LH));
+  }
+
+  /* ── rain ── */
+  if (drops.length) {
+    ctx.fillStyle='#a9c7ee'; ctx.globalAlpha=.75;
+    const slant = Math.max(-1,Math.min(1,wind/40));
+    for (const r of drops) {
+      r.y += r.v*dt; r.x += slant*120*dt;
+      if (r.y>gy) { r.y=-20; r.x=Math.random()*W; }
+      ctx.fillText(Math.abs(slant)>.35?(slant>0?'\\':'/'):'|', snap(r.x,CW), snap(r.y,LH));
+    }
+    ctx.globalAlpha=1;
+  }
+
+  /* ── custom cursor glyph ── */
+  if (mouse.active && mouse.force > 0.1) {
+    cursorTick += dt;
+    const cursors = s.cursorCh;
+    const ci = Math.floor(cursorTick*3) % cursors.length;
+    cursorEl.textContent = cursors[ci];
+  }
+
+  requestAnimationFrame(frame);
+}
+
+/* ═══════════════════════════════════════════════════
+   BOOT
+═══════════════════════════════════════════════════ */
+resize();
+setMode(mode);
+tick();
+startWeather();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
